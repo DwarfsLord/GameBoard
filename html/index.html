@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>GameBoard</title>
+    <style type="text/css">
+        body {
+            background-color: #4e4e4e;
+        }
+
+        board {
+            top: 5vh;
+            left: 30vw;
+            user-select: none;
+            line-height: 0;
+            background-size: cover;
+            position: absolute;
+            width: 40vw;
+            height: 40vw;
+            background-color: #dbdbdb;
+            z-index: -100;
+        }
+
+        settings {
+            top: 5vh;
+            left: 72.5vw;
+            background-size: cover;
+            position: absolute;
+            width: 20vw;
+            /* height: 40vw; */
+            background-color: #eaf1fd;
+            z-index: -100;
+            padding: 20px;
+            padding-top: 50px;
+
+        }
+
+        label {
+            line-height: 2;
+        }
+
+        piece {
+            position: absolute;
+            background-repeat: no-repeat;
+            background-size: cover;
+        }
+    </style>
+</head>
+
+<body>
+    <board>
+    </board>
+    <settings>
+        <form>
+            <label for="cmd">Befehl an Server schicken:</label><br>
+            <input id="cmd" type="text">
+            <input type="submit" onclick="submit_cmd(event)" value="Ok!">
+        </form>
+        <br>
+        <p id="text_out"></p>
+    </settings>
+    <script>
+        var board = document.querySelector('board'),
+            text_out = document.getElementById("text_out"),
+            draged_current,
+            draged_ghost,
+            original_x,
+            original_y,
+            websocket = new WebSocket("ws://10.151.1.251:8001/");
+
+        function submit_cmd(e) {
+            e.preventDefault();
+            input = document.getElementById('cmd');
+            websocket.send('{"type":"set_cmd","cmd":"' + input.value + '"}')
+            input.value = "";
+        }
+
+        function get_board(data) {
+            board.innerHTML = "";
+            data.pieces.forEach(piece => {
+                node = document.createElement('piece');
+                node.style.backgroundImage = "url('" + piece.image_url + "')";
+                node.style.height = piece.height + "%"
+                node.style.width = piece.width + "%"
+                node.style.left = piece.x_pos + "%"
+                node.style.top = piece.y_pos + "%"
+                node.style.zIndex = piece.z_pos
+                node.id = piece.id
+                if (piece.dragable) {
+                    node.onmousedown = dragMouseDown;
+                }
+                board.appendChild(node);
+            });
+        }
+        function dragMouseDown(e) {
+            e = e || window.event;
+            e.preventDefault();
+            draged_current = e.srcElement;
+
+            draged_ghost = draged_current.cloneNode();
+            draged_ghost.id = "ghost";
+            draged_ghost.style.opacity = 0.3;
+            board.appendChild(draged_ghost);
+            draged_current.style.zIndex += 10;
+
+            original_x = e.clientX
+            original_y = e.clientY
+
+            document.onmouseup = closeDragElement;
+            document.onmousemove = elementDrag;
+        }
+        function elementDrag(e) {
+            e = e || window.event;
+            e.preventDefault();
+
+            delta_x = original_x - e.clientX;
+            delta_y = original_y - e.clientY;
+            original_x = e.clientX
+            original_y = e.clientY
+
+            draged_current.style.top = (draged_current.offsetTop - delta_y) + "px";
+            draged_current.style.left = (draged_current.offsetLeft - delta_x) + "px";
+        }
+        function closeDragElement() {
+            document.onmouseup = null;
+            document.onmousemove = null;
+            draged_ghost.remove()
+
+            draged_current.style.zIndex -= 10;
+
+            new_x = 100 * draged_current.offsetLeft / board.offsetWidth;
+            draged_current.style.left = new_x + "%";
+            new_y = 100 * draged_current.offsetTop / board.offsetHeight;
+            draged_current.style.top = new_y + "%";
+
+            websocket.send('{"type":"set_move","player_id":0,"piece_id":' + draged_current.id + ',"to_x":' + new_x + ',"to_y":' + new_y + '}')
+            draged_current = null;
+        }
+        function get_move(data) {
+            node = document.getElementById(data.piece_id)
+            node.style.left = data.to_x + "%"
+            node.style.top = data.to_y + "%"
+        }
+        function get_text(data){
+            text_out.innerHTML = data.content + "<br>" + text_out.innerHTML;
+        }
+        websocket.onmessage = function (event) {
+            data = JSON.parse(event.data);
+            switch (data.type) {
+                case 'board':
+                    get_board(data);
+                    break;
+                case 'move':
+                    get_move(data);
+                    break;
+                case 'text':
+                    get_text(data);
+                    break;
+                default:
+                    break;
+            }
+        }
+    </script>
+</body>
+
+</html>
